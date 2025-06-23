@@ -13,12 +13,12 @@ type Config struct {
 	CurrentUserName string `json:"current_user_name,omitempty"`
 }
 
-const configFileName = "gatorconfig.json"
+const configFileName = ".gatorconfig.json"
 
 func getConfigFilePath() (string, error) {
-	homeDir, err := os.UserConfigDir()
+	homeDir, err := os.UserHomeDir()
 	if err != nil {
-		return "", errors.New("Could not locate home dir")
+		return "", errors.New("could not locate home dir")
 	}
 	return filepath.Join(homeDir, configFileName), nil
 }
@@ -43,7 +43,7 @@ func ReadConfigFile() (Config, error) {
 	return cfg, nil
 }
 
-func (cfg *Config) setUser(username string) error {
+func (cfg *Config) SetUser(username string) error {
 	cfg.CurrentUserName = username
 	return write(*cfg)
 }
