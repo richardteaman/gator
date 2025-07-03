@@ -42,3 +42,8 @@ where feed_follows.user_id = $1;
 SELECT * FROM feed_follows 
 WHERE user_id = $1 AND feed_id = $2 
 LIMIT 1;
+
+-- name: DeleteFeedFollow :exec
+delete from feed_follows
+where feed_follows.user_id = $1 
+and feed_id = (select id from feeds where url = $2 limit 1);

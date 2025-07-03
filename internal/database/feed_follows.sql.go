@@ -77,6 +77,22 @@ func (q *Queries) CreateFeedFollow(ctx context.Context, arg CreateFeedFollowPara
 	return i, err
 }
 
+const deleteFeedFollow = `-- name: DeleteFeedFollow :exec
+delete from feed_follows
+where feed_follows.user_id = $1 
+and feed_id = (select id from feeds where url = $2 limit 1)
+`
+
+type DeleteFeedFollowParams struct {
+	UserID uuid.UUID
+	Url    string
+}
+
+func (q *Queries) DeleteFeedFollow(ctx context.Context, arg DeleteFeedFollowParams) error {
+	_, err := q.db.ExecContext(ctx, deleteFeedFollow, arg.UserID, arg.Url)
+	return err
+}
+
 const getFeedFollowForUserAndFeed = `-- name: GetFeedFollowForUserAndFeed :one
 SELECT id, created_at, updated_at, user_id, feed_id FROM feed_follows 
 WHERE user_id = $1 AND feed_id = $2 
