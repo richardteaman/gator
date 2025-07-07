@@ -99,6 +99,60 @@ func main() {
 	//fmt.Printf("Current config: %+v\n", appState.Config)
 }
 
+func middlewareLoggedIn(
+	handler func(s *state, cmd command, user database.User) error,
+) func(s *state, cmd command) error {
+	return func(s *state, cmd command) error {
+		user, err := s.db.GetUser(context.Background(), s.Config.CurrentUserName)
+		if err != nil {
+			if err == sql.ErrNoRows {
+				return errors.New("no user logged in. please log in first")
+			}
+			return fmt.Errorf("could not fetch current user: %w", err)
+		}
+		return handler(s, cmd, user)
+	}
+}
+
+func isUniqueViolation(err error) bool {
+	return err != nil && (strings.Contains(err.Error(), "duplicate key") || strings.Contains(err.Error(), "already exists"))
+}
+
+func scrapeFeeds(s *state) {
+	ctx := context.Background()
+
+	nextFeed, err := s.db.GetNextFeedToFetch(ctx)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			fmt.Println("No feeds left to scrape.")
+			return
+		}
+		log.Println("Error fetching next feed:", err)
+		return
+	}
+
+	fmt.Println("Fetching feed:", nextFeed.Url)
+
+	rssFeed, err := fetchFeed(ctx, nextFeed.Url)
+	if err != nil {
+		log.Println("Error fetching RSS feed:", err)
+		return
+	}
+
+	fmt.Printf("Fetched feed: %s\n", rssFeed.Channel.Title)
+	for _, item := range rssFeed.Channel.Item {
+		fmt.Println("Title:", item.Title)
+		fmt.Println("Link:", item.Link)
+		fmt.Println("Publish date:", item.PubDate)
+		fmt.Println("-----")
+	}
+
+	err = s.db.MarkFeedFetched(ctx, nextFeed.ID)
+	if err != nil {
+		log.Println("Could not mark feed fetched:", err)
+	}
+}
+
 func handlerLogin(s *state, cmd command) error {
 	if len(cmd.Args) < 1 {
 		return errors.New("no arguments provided")
@@ -161,10 +215,6 @@ func handlerRegister(s *state, cmd command) error {
 	return nil
 }
 
-func isUniqueViolation(err error) bool {
-	return err != nil && (strings.Contains(err.Error(), "duplicate key") || strings.Contains(err.Error(), "already exists"))
-}
-
 func handlerReset(s *state, cmd command) error {
 	err := s.db.ResetUsers(context.Background())
 	if err != nil {
@@ -197,15 +247,25 @@ func handlerUsers(s *state, cmd command) error {
 }
 
 func handlerAgg(s *state, cmd command) error {
-	url := "https://www.wagslane.dev/index.xml"
-
-	rssFeed, err := fetchFeed(context.TODO(), url)
-	if err != nil {
-		log.Fatal("could not fetch rss from agg\n", err)
-		return err
+	if len(cmd.Args) < 1 {
+		return errors.New("no duration argument provided. Example: 10s or 1m")
 	}
-	fmt.Printf("%+v\n", rssFeed)
-	return nil
+
+	durationStr := cmd.Args[0]
+	timeBetweenRequests, err := time.ParseDuration(durationStr)
+	if err != nil {
+		return fmt.Errorf("invalid duration string: %v", err)
+	}
+
+	fmt.Printf("Collecting feeds every %s\n\n", timeBetweenRequests)
+
+	ticker := time.NewTicker(timeBetweenRequests)
+
+	scrapeFeeds(s)
+	for ; ; <-ticker.C {
+		scrapeFeeds(s)
+	}
+
 }
 
 func handlerAddFeed(s *state, cmd command, user database.User) error {
@@ -347,21 +407,6 @@ func handlerFollowing(s *state, cmd command, user database.User) error {
 	}
 
 	return nil
-}
-
-func middlewareLoggedIn(
-	handler func(s *state, cmd command, user database.User) error,
-) func(s *state, cmd command) error {
-	return func(s *state, cmd command) error {
-		user, err := s.db.GetUser(context.Background(), s.Config.CurrentUserName)
-		if err != nil {
-			if err == sql.ErrNoRows {
-				return errors.New("no user logged in. please log in first")
-			}
-			return fmt.Errorf("could not fetch current user: %w", err)
-		}
-		return handler(s, cmd, user)
-	}
 }
 
 func handlerUnfollow(s *state, cmd command, user database.User) error {
