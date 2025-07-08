@@ -9,6 +9,7 @@ import (
 	"gator/internal/database"
 	"log"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -78,6 +79,7 @@ func main() {
 	appCommands.register("follow", middlewareLoggedIn(handlerFollow))
 	appCommands.register("following", middlewareLoggedIn(handlerFollowing))
 	appCommands.register("unfollow", middlewareLoggedIn(handlerUnfollow))
+	appCommands.register("browse", middlewareLoggedIn(handlerBrowse))
 
 	if len(os.Args) < 2 {
 		log.Fatal("no command provided")
@@ -140,17 +142,66 @@ func scrapeFeeds(s *state) {
 	}
 
 	fmt.Printf("Fetched feed: %s\n", rssFeed.Channel.Title)
+
 	for _, item := range rssFeed.Channel.Item {
-		fmt.Println("Title:", item.Title)
-		fmt.Println("Link:", item.Link)
-		fmt.Println("Publish date:", item.PubDate)
-		fmt.Println("-----")
+		pubTime, err := parsePubDate(item.PubDate)
+		var pubTimeNull sql.NullTime
+		if err == nil && !pubTime.IsZero() {
+			pubTimeNull = sql.NullTime{Time: pubTime, Valid: true}
+		}
+
+		now := time.Now()
+
+		_, err = s.db.CreatePost(ctx, database.CreatePostParams{
+			ID:          uuid.New(),
+			CreatedAt:   now,
+			UpdatedAt:   now,
+			Title:       sql.NullString{String: item.Title, Valid: item.Title != ""},
+			Url:         item.Link,
+			Description: sql.NullString{String: item.Description, Valid: item.Description != ""},
+			PublishedAt: pubTimeNull,
+			FeedID:      nextFeed.ID,
+		})
+
+		if err != nil {
+			if strings.Contains(err.Error(), "duplicate key") {
+				continue
+			}
+			log.Println("Could not insert post:", err)
+		}
 	}
 
 	err = s.db.MarkFeedFetched(ctx, nextFeed.ID)
 	if err != nil {
 		log.Println("Could not mark feed fetched:", err)
 	}
+}
+
+func parsePubDate(pubDateStr string) (time.Time, error) {
+	if pubDateStr == "" {
+		return time.Time{}, nil
+	}
+
+	layouts := []string{
+		time.RFC1123Z,
+		time.RFC1123, // "Mon, 02 Jan 2006 15:04:05 MST"
+		time.RFC3339, // "2006-01-02T15:04:05Z"
+		"2005-01-02",
+	}
+
+	var t time.Time
+	var err error
+
+	for _, layout := range layouts {
+		t, err = time.Parse(layout, pubDateStr)
+		if err == nil {
+			return t, nil
+		}
+	}
+
+	log.Printf("could not parse publish date %q: %v", pubDateStr, err)
+	return time.Time{}, nil
+
 }
 
 func handlerLogin(s *state, cmd command) error {
@@ -243,6 +294,45 @@ func handlerUsers(s *state, cmd command) error {
 		}
 
 	}
+	return nil
+}
+
+func handlerBrowse(s *state, cmd command, user database.User) error {
+	limit := int32(2)
+
+	if len(cmd.Args) > 0 {
+		userLimit, err := strconv.Atoi(cmd.Args[0])
+		if err != nil {
+			return fmt.Errorf("invalid limit format: %w", err)
+		}
+		limit = int32(userLimit)
+	}
+
+	posts, err := s.db.GetPostsByUserId(context.Background(), database.GetPostsByUserIdParams{
+		UserID: user.ID,
+		Limit:  limit,
+	})
+	if err != nil {
+		return fmt.Errorf("could not fetch posts for user: %w", err)
+	}
+
+	if len(posts) == 0 {
+		fmt.Println("No posts found for your followed feeds.")
+		return nil
+	}
+
+	for _, post := range posts {
+		fmt.Println("Title:", post.Title.String)
+		fmt.Println("URL:", post.Url)
+		fmt.Println("Description:", post.Description.String)
+		if post.PublishedAt.Valid {
+			fmt.Println("Published at:", post.PublishedAt.Time.Format(time.RFC3339))
+		} else {
+			fmt.Println("Published at: unknown")
+		}
+		fmt.Println("-------")
+	}
+
 	return nil
 }
 
