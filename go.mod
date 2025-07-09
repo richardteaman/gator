@@ -1,4 +1,4 @@
-module gator
+module github.com/richardteaman/gator
 
 go 1.23.5
 
