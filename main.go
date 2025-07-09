@@ -5,13 +5,14 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"gator/internal/config"
-	"gator/internal/database"
 	"log"
 	"os"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/richardteaman/gator/internal/config"
+	"github.com/richardteaman/gator/internal/database"
 
 	"github.com/google/uuid"
 	_ "github.com/lib/pq"
