@@ -13,9 +13,9 @@ go install github.com/richardteaman/gator
 
 ## Configuration
 Gator reads database credentials and your current user from a config file. 
-The config file is: ~/.gatorconfig
+The config file is: ~/.gatorconfig.json
 
-currently .gatorconfig is not generated automatically (create with nano or similar)
+currently .gatorconfig.json is not generated automatically (create with `nano` or similar)
 example for it provided below:  
 {  
     "db_url": "postgres://username:password@localhost:5432/gator?sslmode=disable",
@@ -23,7 +23,7 @@ example for it provided below:
 }
 
 ## Runnig the program
-run with:
+run with:  
 **gator** [command] `<args>`
 
 ## Commands
